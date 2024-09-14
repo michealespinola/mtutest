@@ -1,4 +1,4 @@
-This script (available in both Bash and Batch versions) determines the optimal Maximum Transmission Unit (MTU) for a network connection using a binary search methodology to find the largest buffer size that can be transmitted without fragmentation. By pinging a target IP address with progressively adjusted packet sizes, it uses reductive math and logic to narrow the search range with each test iteration. Once the largest non-fragmented buffer size is found, the script calculates the final MTU by adding the standard IP and ICMP header sizes.
+This script determines the optimal Maximum Transmission Unit (MTU) for a network connection using a binary search methodology to find the largest buffer size that can be transmitted without fragmentation. By pinging a target IP address with progressively adjusted packet sizes, it uses reductive math and logic to narrow the search range with each test iteration. Once the largest non-fragmented buffer size is found, the script calculates the final MTU by adding the standard IP and ICMP header sizes.
 
 It includes options for setting custom buffer sizes, a target IP, and a quiet mode for displaying only the final MTU value.
 
