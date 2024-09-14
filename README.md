@@ -38,7 +38,7 @@ It includes options for setting custom buffer sizes, a target IP, and a quiet mo
         Ping Buffer: 1471 bytes
         Ping Buffer: 1472 bytes
                     ----
-        Max Buffer: 1472 bytes
+         Max Buffer: 1472 bytes
           IP Header: 20 bytes
         ICMP Header: 8 bytes
                     ----
