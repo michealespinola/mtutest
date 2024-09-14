@@ -18,6 +18,7 @@ It includes options for setting custom buffer sizes, a target IP, and a quiet mo
 ### Default Run (timed)
 
     @SYSTEM:/volume1/homes/admin/scripts/bash# time { bash mtutest.sh; }
+    
     Starting MTU check for 65536 bytes against 1.1.1.1...
     
         Ping Buffer: 65536 bytes (fragmented)
@@ -43,6 +44,7 @@ It includes options for setting custom buffer sizes, a target IP, and a quiet mo
         ICMP Header: 8 bytes
                      ----
           IDEAL MTU: 1500
+          
 ----
     real    0m1.073s
     user    0m0.076s
