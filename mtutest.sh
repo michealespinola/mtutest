@@ -14,6 +14,29 @@ targetIpv4="1.1.1.1" # The IP address or hostname to ping (https://one.one.one.o
 lowerBound=68        # Default low range for buffer size, per RFC 791
 upperBound=65536     # Default high range for buffer size (64 KiB), per RFC 791
 
+# DETECT OPERATING SYSTEM
+OStype="$(uname -s)"
+case "$OStype" in
+  Darwin|FreeBSD|OpenBSD|NetBSD)
+    # BSD-family ping
+    # -D = Don't Fragment
+    # -W is milliseconds
+    PING_TIMEOUT=1000
+    PING_CMD=(ping -c 1 -D -W "$PING_TIMEOUT")
+    ;;
+  Linux)
+    # GNU iputils ping
+    # -M "do" = Don't Fragment
+    # -W is seconds
+    PING_TIMEOUT=1
+    PING_CMD=(ping -c 1 -M "do" -W "$PING_TIMEOUT")
+    ;;
+  *)
+    printf '\nUnsupported OS: %s\n\n' "$OS"
+    exit 1
+    ;;
+esac
+
 # OVERRIDE DEFAULT VALUES WITH CLI OPTIONS
 while getopts "b:t:qh" opt; do
   case $opt in
@@ -53,14 +76,13 @@ while getopts "b:t:qh" opt; do
   esac
 done
 
-# PING TEST FUNCTION
 ping_test() {
   if {
-    ping -c 1 -M "do" -s "$1" -W 1 "$targetIpv4" &
+    "${PING_CMD[@]}" -s "$1" "$targetIpv4" &
     pid=$!
     sleep 0.06
-    kill $pid
-  } 2>&1 | grep -E -q "frag needed|too long|too large"; then
+    kill "$pid" 2>/dev/null
+  } 2>&1 | grep -E -i -q "frag needed|too long|too large|message too long"; then
     return 1
   else
     return 0
@@ -70,7 +92,7 @@ ping_test() {
 # Print the header
 if [ -z "$resultOnly" ]; then
   if [ -z "$resultOnly" ]; then
-    printf "\nStarting MTU check for %d bytes against %s...\n\n" "$upperBound" "$targetIpv4"
+    printf "\nStarting MTU test for %d bytes against %s...\n\n" "$upperBound" "$targetIpv4"
   fi
 fi
 
@@ -110,8 +132,8 @@ idealMtuDp=$((maximumSiz + ipv4Header + icmpHeader))
 # PRINT RESULTS
 if [ -z "$resultOnly" ]; then
   printf '%16s %s\n'             "" "----"
-  printf '%16s %s\n' "Max Buffer:"  "$maximumSiz bytes"
-  printf '%16s %s\n' "IP Header:"   "$ipv4Header bytes"
+  printf '%16s %s\n'  "Max Buffer:" "$maximumSiz bytes"
+  printf '%16s %s\n'   "IP Header:" "$ipv4Header bytes"
   printf '%16s %s\n' "ICMP Header:" "$icmpHeader bytes"
   printf '%16s %s\n'             "" "----"
   printf '%16s %s\n\n' "IDEAL MTU:" "$idealMtuDp"
