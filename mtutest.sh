@@ -8,7 +8,7 @@
 # shellcheck source=/dev/null
 # bash /volume1/homes/admin/scripts/bash/mtutest.sh
 
-SCRIPT_VERSION=1.0.0
+SCRIPT_VERSION=1.0.1
 
 get_source_info() {                                                                               # FUNCTION TO GET SOURCE SCRIPT INFORMATION
   srcScrpVer="${SCRIPT_VERSION}"                                                                  # Source script version
@@ -19,9 +19,11 @@ get_source_info() {                                                             
 get_source_info
 
 # DEFAULT VALUES
-targetIpv4="1.1.1.1" # The IP address or hostname to ping (https://one.one.one.one/)
-lowerBound=68        # Default low range for buffer size, per RFC 791
-upperBound=65536     # Default high range for buffer size (64 KiB), per RFC 791
+boundLower=68        # Default low range for buffer size in bytes, per RFC 791
+boundUpper=65536     # Default high range for buffer size (64 KiB) in bytes, per RFC 791
+icmpHeader=8         # Typical ICMP header size in bytes, per RFC 792
+ipv4Header=20        # Typical IPv4 header size in bytes, per RFC 791
+ipv4Target="1.1.1.1" # The IP address or hostname to ping (https://one.one.one.one/)
 probeDelay=0.06      # Seconds to wait before treating an unanswered probe as failed
 
 # DETECT OPERATING SYSTEM
@@ -70,22 +72,22 @@ while getopts "b:t:qh" opt; do
       printf '\n%16s %s\n\n' "Bad Option:" "-b, Requires a number value"
       exit 1
     fi
-    upperBound="$OPTARG"
+    boundUpper="$OPTARG"
     ;;
   t)
     if ! [[ "$OPTARG" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ && "$OPTARG" =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$ ]]; then
       printf '\n%16s %s\n\n' "Bad Option:" "-t, Requires a valid IPv4 address"
       exit 1
     fi
-    targetIpv4="$OPTARG"
+    ipv4Target="$OPTARG"
     ;;
   q) # Quiet Mode Option
     resultOnly=true
     ;;
   h) # HELP OPTION
     printf '\n%s\n\n' "Usage: $srcFileNam [-b #] [-t #.#.#.#] [-q] [-h]"
-    printf ' %s\n'    "-b: Override the default buffer max size of $upperBound"
-    printf ' %s\n'    "-t: Override the default ping target of $targetIpv4"
+    printf ' %s\n'    "-b: Override the default buffer max size of $boundUpper"
+    printf ' %s\n'    "-t: Override the default ping target of $ipv4Target"
     printf ' %s\n'    "-q: Quiet mode, only output the final result"
     printf ' %s\n\n'  "-h: Display this help message"
     exit 0
@@ -105,7 +107,7 @@ ping_test() {
   local pingOutput pingStatus pid
 
   pingOutput="$(
-    "${PING_CMD[@]}" "${PING_SIZE_OPT[@]}" "$1" "$targetIpv4" 2>&1 &
+    "${PING_CMD[@]}" "${PING_SIZE_OPT[@]}" "$1" "$ipv4Target" 2>&1 &
     pid=$!
 
     sleep "$probeDelay"
@@ -153,40 +155,38 @@ ping_test() {
 
 # Print the header
 if [ -z "$resultOnly" ]; then
-  printf "\nStarting MTU test for %d bytes against %s...\n\n" "$upperBound" "$targetIpv4"
+  printf "\nStarting MTU test for %d bytes against %s...\n\n" "$boundUpper" "$ipv4Target"
 fi
 
-if ping_test "$upperBound"; then
-  maximumSiz=$upperBound
+if ping_test "$boundUpper"; then
+  maximumSiz=$boundUpper
 else
   if [ -z "$resultOnly" ]; then
-    printf '%16s %s\n' "Ping Buffer:" "$upperBound bytes (fragmented)"
+    printf '%16s %s\n' "Ping Buffer:" "$boundUpper bytes (fragmented)"
   fi
-  upperBound=$((upperBound - 1))
+  boundUpper=$((boundUpper - 1))
 fi
 
 # BINARY SEARCH TO FIND THE MAXIMUM BUFFER SIZE
-while [ $((upperBound - lowerBound)) -gt 1 ]; do
-  testingBuf=$(((lowerBound + upperBound) / 2))
+while [ $((boundUpper - boundLower)) -gt 1 ]; do
+  testingBuf=$(((boundLower + boundUpper) / 2))
   if ping_test "$testingBuf"; then
     if [ -z "$resultOnly" ]; then
       printf '%16s %s\n' "Ping Buffer:" "$testingBuf bytes"
     fi
-    lowerBound=$testingBuf
+    boundLower=$testingBuf
   else
     if [ -z "$resultOnly" ]; then
       printf '%16s %s\n' "Ping Buffer:" "$testingBuf bytes (fragmented)"
     fi
-    upperBound=$testingBuf
+    boundUpper=$testingBuf
   fi
 done
 
-# lowerBound should now be the maximum buffer size that doesn't fragment
-maximumSiz=$lowerBound
+# boundLower should now be the maximum buffer size that doesn't fragment
+maximumSiz=$boundLower
 
 # CALCULATE THE IDEAL MTU DATA PACKET SIZE
-ipv4Header=20 # Typical IPv4 header size, per RFC 791
-icmpHeader=8  # Typical ICMP header size, per RFC 792
 idealMtuDp=$((maximumSiz + ipv4Header + icmpHeader))
 
 # PRINT RESULTS
