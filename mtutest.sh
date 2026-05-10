@@ -8,7 +8,7 @@
 # shellcheck source=/dev/null
 # bash /volume1/homes/admin/scripts/bash/mtutest.sh
 
-SCRIPT_VERSION=1.0.1
+SCRIPT_VERSION=1.0.2
 
 get_source_info() {                                                                               # FUNCTION TO GET SOURCE SCRIPT INFORMATION
   srcScrpVer="${SCRIPT_VERSION}"                                                                  # Source script version
@@ -41,7 +41,7 @@ case "$OStype" in
     ;;
   Linux)
     # GNU iputils ping
-    # -M "do" = Don't Fragment
+    # -M "do" = Mtu do prohibit fragmentation
     # -s = payload Size
     # -W = Wait in seconds
     PING_TIMEOUT=1
