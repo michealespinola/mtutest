@@ -1,38 +1,63 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # A script to automagically determine the ideal Maximum Transmission Unit (MTU) size
 #
 # Author @michealespinola https://github.com/michealespinola/mtutest
+#
+# shellcheck disable=SC2034,SC2207
+# shellcheck source=/dev/null
+# bash /volume1/homes/admin/scripts/bash/mtutest.sh
 
-# SCRAPE SCRIPT PATH INFO
-SrceFllPth=$(readlink -f "${BASH_SOURCE[0]}")
-#SrceFolder=$(dirname "$SrceFllPth")
-SrceFileNm=${SrceFllPth##*/}
+SCRIPT_VERSION=1.0.0
+
+get_source_info() {                                                                               # FUNCTION TO GET SOURCE SCRIPT INFORMATION
+  srcScrpVer="${SCRIPT_VERSION}"                                                                  # Source script version
+  srcFullDir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"                             # Source script absolute physical directory
+  srcFullPth="${srcFullDir}/$(basename -- "${BASH_SOURCE[0]}")"                                   # Source script absolute path
+  srcFileNam="${srcFullPth##*/}"                                                                  # Source script file name
+}
+get_source_info
 
 # DEFAULT VALUES
 targetIpv4="1.1.1.1" # The IP address or hostname to ping (https://one.one.one.one/)
 lowerBound=68        # Default low range for buffer size, per RFC 791
 upperBound=65536     # Default high range for buffer size (64 KiB), per RFC 791
+probeDelay=0.06      # Seconds to wait before treating an unanswered probe as failed
 
 # DETECT OPERATING SYSTEM
 OStype="$(uname -s)"
 case "$OStype" in
   Darwin|FreeBSD|OpenBSD|NetBSD)
     # BSD-family ping
-    # -D = Don't Fragment
-    # -W is milliseconds
+    # -c = Count of pings
+    # -D = Don't fragment
+    # -s = payload Size
+    # -W = Wait in milliseconds
     PING_TIMEOUT=1000
     PING_CMD=(ping -c 1 -D -W "$PING_TIMEOUT")
+    PING_SIZE_OPT=(-s)
     ;;
   Linux)
     # GNU iputils ping
     # -M "do" = Don't Fragment
-    # -W is seconds
+    # -s = payload Size
+    # -W = Wait in seconds
     PING_TIMEOUT=1
     PING_CMD=(ping -c 1 -M "do" -W "$PING_TIMEOUT")
+    PING_SIZE_OPT=(-s)
+    ;;
+  MINGW*|MSYS*|CYGWIN*)
+    # Windows native ping.exe
+    # -f = don't Fragment
+    # -l = payLoad size
+    # -n = Number of pings
+    # -w = Wait in milliseconds
+    PING_TIMEOUT=1000
+    PING_CMD=(ping.exe -n 1 -f -w "$PING_TIMEOUT")
+    PING_SIZE_OPT=(-l)
     ;;
   *)
-    printf '\nUnsupported OS: %s\n\n' "$OS"
+    printf '\nUnsupported OS: %s\n\n' "$OStype"
     exit 1
     ;;
 esac
@@ -58,7 +83,7 @@ while getopts "b:t:qh" opt; do
     resultOnly=true
     ;;
   h) # HELP OPTION
-    printf '\n%s\n\n' "Usage: $SrceFileNm [-b #] [-t #.#.#.#] [-q] [-h]"
+    printf '\n%s\n\n' "Usage: $srcFileNam [-b #] [-t #.#.#.#] [-q] [-h]"
     printf ' %s\n'    "-b: Override the default buffer max size of $upperBound"
     printf ' %s\n'    "-t: Override the default ping target of $targetIpv4"
     printf ' %s\n'    "-q: Quiet mode, only output the final result"
@@ -77,23 +102,58 @@ while getopts "b:t:qh" opt; do
 done
 
 ping_test() {
-  if {
-    "${PING_CMD[@]}" -s "$1" "$targetIpv4" &
+  local pingOutput pingStatus pid
+
+  pingOutput="$(
+    "${PING_CMD[@]}" "${PING_SIZE_OPT[@]}" "$1" "$targetIpv4" 2>&1 &
     pid=$!
-    sleep 0.06
-    kill "$pid" 2>/dev/null
-  } 2>&1 | grep -E -i -q "frag needed|too long|too large|message too long"; then
+
+    sleep "$probeDelay"
+
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null
+      wait "$pid" 2>/dev/null
+      printf '\n__PING_STATUS__:124\n'
+    else
+      wait "$pid"
+      printf '\n__PING_STATUS__:%s\n' "$?"
+    fi
+  )"
+
+  pingStatus=${pingOutput##*__PING_STATUS__:}
+
+  if printf '%s\n' "$pingOutput" | awk '
+    {
+      line = tolower($0)
+      found = found || line ~ /frag needed/
+      found = found || line ~ /fragmented but df set/
+      found = found || line ~ /too long/
+      found = found || line ~ /too large/
+      found = found || line ~ /message too long/
+      found = found || line ~ /packet needs to be fragmented/
+      found = found || line ~ /but df set/
+    }
+
+    END {
+      exit found ? 0 : 1
+    }
+  '; then
     return 1
-  else
-    return 0
   fi
+
+  case "$pingStatus" in
+    0)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 # Print the header
 if [ -z "$resultOnly" ]; then
-  if [ -z "$resultOnly" ]; then
-    printf "\nStarting MTU test for %d bytes against %s...\n\n" "$upperBound" "$targetIpv4"
-  fi
+  printf "\nStarting MTU test for %d bytes against %s...\n\n" "$upperBound" "$targetIpv4"
 fi
 
 if ping_test "$upperBound"; then
@@ -108,7 +168,7 @@ fi
 # BINARY SEARCH TO FIND THE MAXIMUM BUFFER SIZE
 while [ $((upperBound - lowerBound)) -gt 1 ]; do
   testingBuf=$(((lowerBound + upperBound) / 2))
-  if ping_test $testingBuf; then
+  if ping_test "$testingBuf"; then
     if [ -z "$resultOnly" ]; then
       printf '%16s %s\n' "Ping Buffer:" "$testingBuf bytes"
     fi
